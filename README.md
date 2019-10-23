@@ -1,2 +1,2 @@
 # Sam
-Hello! This is Sam's Github!
+Hello! This is Sam's GitHub!
