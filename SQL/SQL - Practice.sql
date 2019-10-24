@@ -1,6 +1,3 @@
--- SQL Final Exam
--- Sam (Dong Wook) Ko
-
 -- 1. Find the name and title of every professor or associate professor who was hired in 1992. 
 select concat(s.StfFirstName,' ',s.StfLastName) as name, f.title, s.datehired
 from staff s
