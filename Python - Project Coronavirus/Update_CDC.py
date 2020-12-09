@@ -43,7 +43,7 @@ def mongodb_import(collection_name:str):
     from pymongo import MongoClient
     import pandas as pd
     
-    auth = "mongodb://analyst:grmds@3.101.18.8/COVID19-DB"
+    auth = "______________"
     db_name = 'COVID19-DB'
     
     client = pymongo.MongoClient(auth) # defaults to port 27017
