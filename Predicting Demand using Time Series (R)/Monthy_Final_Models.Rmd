@@ -1,0 +1,243 @@
+---
+title: "Demand Prediction using Time Series (Monthly)"
+date: "11/10/2020"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+## Monthly Data
+```{r}
+
+library(forecast)
+library(ggplot2)
+library(zoo)
+
+
+
+data = read.csv("monthly_new.csv", header=T)
+head(data)
+data = data[2:(dim(data)[1]-1),]
+
+data.ts = ts(data$CA_total, start=c(2011,2), frequency=12)
+autoplot(data.ts, main="Monthly California total sales from 2011 to 2016")
+```
+
+
+## Train-test split
+```{r}
+n = length(data.ts)
+nValid=12
+nTrain = n - nValid
+train.ts = window(data.ts, start=c(2011,2), end=c(2011, nTrain), frequency=12)
+test.ts = window(data.ts, start=c(2011, nTrain+1), frequency=12)
+```
+
+
+## Naive Forecast
+```{r}
+model = naive(train.ts, h=12)
+accuracy(model, test.ts)
+model_season = snaive(train.ts, h=frequency(train.ts))
+accuracy(model_season, test.ts)
+
+autoplot(train.ts) +
+  autolayer(model, series="Naive", PI=FALSE) +
+  autolayer(model_season, series="Seasonal Naive", PI=FALSE) +
+  autolayer(test.ts, series="Observed")
+```
+
+
+## Moving Average
+```{r}
+w = 12
+pred = rep(NA, nValid)
+for(i in 1:nValid){
+  ntrain.temp = n-nValid+(i-1)
+  train.temp = window(data.ts, start=c(2011,2), end=c(2011, ntrain.temp), frquency=12)
+  model = rollmean(train.temp, k=w, align="right")
+  last.ma = tail(model, 1)
+  pred[i] = last.ma
+}
+pred = ts(pred, start=c(2011, n-nValid+1), frequency=12)
+accuracy(pred, test.ts)
+accuracy(rollmean(train.ts, k=12, align="right"), train.ts)
+
+autoplot(data.ts, col="black")+
+  autolayer(pred, series="MA (prediction)")+
+  autolayer(rollmean(train.ts, k=12, align="right"), series="MA (training)")
+```
+
+
+## Exponential Smoothing
+```{r}
+model = ets(train.ts, model="ZZZ")
+summary(model)
+pred = forecast(model, h=nValid, level=0)
+accuracy(pred, test.ts)
+
+autoplot(data.ts, ylab="Sales")+
+  autolayer(pred, series="Forecast")
+```
+
+
+## ARIMA
+```{r}
+par(mfrow=c(1,2))
+Acf(data.ts, lag.max=210) 
+Pacf(data.ts, lag.max=210)
+par(mfrow=c(1,1))
+
+data.diff = diff(train.ts, lag=1)
+plot(data.diff, ylab="de_trended")
+par(mfrow=c(1,2))
+Acf(data.diff, lag.max=210, main="ACF", ylab="") 
+Pacf(data.diff, lag.max=210, main="PACF", ylab="")
+par(mfrow=c(1,1))
+
+model = Arima(train.ts, order=c(1,1,1)) # order = c(p(AR),d(diff),q(MA))
+summary(model)
+pred = forecast(model, h=nValid)
+accuracy(pred, test.ts)
+
+model = Arima(train.ts, order=c(2,1,2)) # order = c(p(AR),d(diff),q(MA))
+summary(model)
+pred = forecast(model, h=nValid)
+accuracy(pred, test.ts)
+
+model = Arima(train.ts, order=c(3,1,3)) # order = c(p(AR),d(diff),q(MA))
+summary(model)
+pred = forecast(model, h=nValid)
+accuracy(pred, test.ts)
+
+model = Arima(train.ts, order=c(1,1,1), seasonal=list(order=c(1,1,0), period=12)) # order = c(p(AR),d(diff),q(MA))
+summary(model)
+pred = forecast(model, h=nValid)
+accuracy(pred, test.ts)
+
+model = Arima(train.ts, order=c(2,1,1), seasonal=list(order=c(1,1,0), period=12)) # order = c(p(AR),d(diff),q(MA))
+summary(model)
+pred = forecast(model, h=nValid)
+accuracy(pred, test.ts)
+
+model = Arima(train.ts, order=c(1,1,2), seasonal=list(order=c(1,1,0), period=12)) # order = c(p(AR),d(diff),q(MA))
+summary(model)
+pred = forecast(model, h=nValid)
+accuracy(pred, test.ts)
+
+autoplot(data.ts, main="ARIMA forecast sales vs. actual sales")+
+  autolayer(model$fitted, series="forecast_training")+
+  autolayer(pred, series="forecast_test", PI=FALSE)
+
+checkresiduals(pred)
+```
+
+
+## Final Forecasting model
+This is our final forecasting model that should be deployed
+```{r}
+model = Arima(data.ts, order=c(1,1,2), seasonal=list(order=c(1,1,0), period=12))
+pred = forecast(model, h=12)
+pred$mean
+```
+
+
+## External Variables
+```{r}
+target = ts(data$CA_total, start=c(2011,2), frequency=12)
+trend = time(target)
+CA_FOODS_pct = ts(data$CA_FOODS_pct, start=c(2011,2), frequency=12)
+CA_HOBBIES_pct = ts(data$CA_HOBBIES_pct, start=c(2011,2), frequency=12)
+CA_HOUSEHOLD_pct = ts(data$CA_HOUSEHOLD_pct, start=c(2011,2), frequency=12)
+event = ts(data$event, start=c(2011,2), frequency=12)
+event_weekend = ts(data$event_weekend, start=c(2011,2), frequency=12)
+Cultural = ts(data$Cultural, start=c(2011,2), frequency=12)
+National = ts(data$National, start=c(2011,2), frequency=12)
+Religious = ts(data$Religious, start=c(2011,2), frequency=12)
+Sporting = ts(data$Sporting, start=c(2011,2), frequency=12)
+TX_total = ts(data$TX_total, start=c(2011,2), frequency=12)
+WI_total = ts(data$WI_total, start=c(2011,2), frequency=12)
+unemployment = ts(data$unemployment_rate, start=c(2011,2), frequency=12)
+income = ts(data$personal_income, start=c(2011,2), frequency=12)
+gdp = ts(data$real_gdp, start=c(2011,2), frequency=12)
+
+Ccf(target, CA_FOODS_pct) # lag7
+Ccf(target, CA_HOBBIES_pct) # lag5
+Ccf(target, CA_HOUSEHOLD_pct) # lag8
+Ccf(target, TX_total) # lag1
+Ccf(target, WI_total) # lag1
+Ccf(target, unemployment) # lag1
+Ccf(target, income) # lag1
+Ccf(target, gdp) # lag1
+
+newdata = ts.intersect(target, trend, 
+                       food=lag(CA_FOODS_pct,-7), hobbies=lag(CA_HOBBIES_pct,-5), household=lag(CA_HOUSEHOLD_pct,-8),
+                       event, event_weekend, event_culture=Cultural, event_religion=Religious, event_sport=Sporting,
+                       WI=lag(WI_total,-1),TX=lag(TX_total,-1),
+                       unemployment=lag(unemployment,-1), gdp=lag(gdp,-1), income=lag(income,-1))
+
+model = lm(target ~ trend + food + hobbies + household + 
+               event + event_weekend + event_culture + event_religion + event_sport + 
+               WI+TX +
+               unemployment + gdp + income,
+             data=newdata)
+summary(model)
+
+
+model = lm(target ~ food + hobbies + household + 
+               event + event_weekend + event_culture + event_religion + event_sport + 
+               WI+TX +
+               unemployment + gdp + income,
+             data=newdata)
+summary(model)
+
+
+model = lm(target ~ food + hobbies + household + 
+               event + event_weekend + event_culture + event_religion + event_sport + 
+               WI+TX +
+               unemployment + income,
+             data=newdata)
+summary(model)
+
+
+model = lm(target ~ food + hobbies + household + 
+               event + event_weekend + event_culture + event_religion + event_sport + 
+               WI+TX +
+               income,
+             data=newdata)
+summary(model)
+
+model = lm(target ~ hobbies + household + 
+               event + event_weekend + event_culture + event_religion + event_sport + 
+               TX +
+               income,
+             data=newdata)
+summary(model)
+
+model = lm(target ~ hobbies + 
+               event + event_weekend + event_culture + event_religion + event_sport + 
+               TX +
+               income,
+             data=newdata)
+summary(model)
+
+model = lm(target ~ hobbies + 
+               event + event_culture + event_religion + event_sport + 
+               TX +
+               income,
+             data=newdata)
+summary(model)
+
+model = lm(target ~ hobbies + 
+               event + event_culture + event_religion + 
+               TX +
+               income,
+             data=newdata)
+summary(model)
+
+target_fitted = ts(model$fitted.values, start=c(2011,2+8), frequency=12)
+autoplot(target, ylab="Sales", main="Linear Regression, actual vs. prediction")+
+  autolayer(target_fitted, series="prediction")
+
+checkresiduals(model)
+```

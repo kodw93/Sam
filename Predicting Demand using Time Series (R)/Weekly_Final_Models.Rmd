@@ -1,0 +1,329 @@
+---
+title: "Demand Prediction using Time Series (Weekly)"
+date: "11/21/2020"
+output:
+  pdf_document: default
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(forecast)
+library(ggplot2)
+#library(DataCombine)
+
+data = read.csv("weekly_new.csv")
+data = data[1:277,]
+ca.ts = ts(data$CA_total, start=c(2011, 1), frequency = 52)
+tx.ts = ts(data$TX_total, start=c(2011, 1), frequency = 52)
+wi.ts = ts(data$WI_total, start=c(2011, 1), frequency = 52)
+
+autoplot(ca.ts, main="Weekly California total sales from 2011 to 2016", xlab="Week", ylab="Total sales")
+
+# split train and test data
+# use the last 16 weeks as test
+ntest = 16
+ntrain = length(ca.ts) - ntest
+train = window(ca.ts, end=c(2011, ntrain), frequency=52)
+test = window(ca.ts, start=c(2011, ntrain+1), frequency=52)
+
+# naive forecast
+na.m = naive(train)
+na.pred = forecast(na.m, h=8)
+autoplot(test, series="actual") + 
+  autolayer(na.pred, PI=FALSE, series="naive forecast")
+accuracy(na.pred, test)
+na.pred = rep(378236.3, 16)
+accuracy(na.pred, test)
+
+# seasonal naive
+nas.m = snaive(train)
+nas.pred = forecast(nas.m, h=ntest)
+autoplot(test, series="actual") + 
+  autolayer(nas.pred, PI=FALSE, series="seasonal naive forecast")
+accuracy(nas.pred, test)
+
+# Moving Average
+library(zoo)
+# w=4
+ma = rollmean(train, k=4, align="right")
+last.ma = tail(ma, 1)
+ma.pred = ts(rep(last.ma, ntest), start=c(2011, ntrain+1), frequency = 52)
+ma.pred
+autoplot(test, series="actual") + 
+  autolayer(ma.pred, PI=FALSE, series="moving average")
+# train accuracy
+accuracy(ma, train)
+# test accuracy
+accuracy(ma.pred, test)
+
+# w=52
+ma = rollmean(train, k=52, align="right")
+last.ma = tail(ma, 1)
+ma.pred = ts(rep(last.ma, ntest), start=c(2011, ntrain+1), frequency = 52)
+ma.pred
+autoplot(test, series="actual") + 
+  autolayer(ma.pred, PI=FALSE, series="moving average")
+# train accuracy
+accuracy(ma, train)
+# test accuracy
+accuracy(ma.pred, test)
+
+#########################################
+# Moving Average rolling forward, k=4
+mar.pred = rep(NA, ntest)
+# start the for loop
+for(i in 1:ntest){
+  
+  # Split the data into training and validation
+  nTrain = length(ca.ts) - ntest + (i-1)
+  train.ts = window(ca.ts, start=c(2011, 1), end=c(2011, nTrain))
+  
+  # Fit a trailing average smoother
+  ma.trailing.roll = rollmean(train.ts, k=4, align="right")
+  
+  # Find the last moving average in the taining period
+  last.ma = tail(ma.trailing.roll, 1)
+  
+  # Use the last moving average as the prediction for each month in the validation   period
+  mar.pred[i] = last.ma
+  
+}
+
+mar.pred = ts(mar.pred, start=c(2011, ntrain+1), frequency = 52)
+autoplot(test, series="actual") + 
+  autolayer(mar.pred, PI=FALSE, series="moving average rolling forward")
+accuracy(ma.trailing.roll, train)
+accuracy(mar.pred, test)
+
+#########################################
+# Moving Average rolling forward, k=52
+mar.pred = rep(NA, ntest)
+# start the for loop
+for(i in 1:ntest){
+  
+  # Split the data into training and validation
+  nTrain = length(ca.ts) - ntest + (i-1)
+  train.ts = window(ca.ts, start=c(2011, 1), end=c(2011, nTrain))
+  
+  # Fit a trailing average smoother
+  ma.trailing.roll = rollmean(train.ts, k=52, align="right")
+  
+  # Find the last moving average in the taining period
+  last.ma = tail(ma.trailing.roll, 1)
+  
+  # Use the last moving average as the prediction for each month in the validation   period
+  mar.pred[i] = last.ma
+  
+}
+
+mar.pred = ts(mar.pred, start=c(2011, ntrain+1), frequency = 52)
+autoplot(test, series="actual") + 
+  autolayer(mar.pred, PI=FALSE, series="moving average rolling forward")
+accuracy(ma.trailing.roll, train)
+accuracy(mar.pred, test)
+
+#####################################
+# Simple exponential smoothing
+# remove trend and seasonality
+lag.1 = diff(ca.ts, lag=1)
+plot(lag.1, main="De-trended data")
+lag.1.52 = diff(lag.1, lag=52)
+plot(lag.1.52, main="De-trended and De-season data")
+
+# split data into train and test
+dntest = 16
+dntrain = length(lag.1.52) - dntest
+dtrain = window(lag.1.52, start=c(2012, 2), frequency=52)
+dtest = window(lag.1.52, start=c(2012, dntrain+2), frequency=52)
+
+# simple exponential smoothing 
+m1 = ets(dtrain, model="ANN")
+m1.pred = forecast.ets(m1, h=ntest, level=0)
+m1.pred = ts(m1.pred[[2]], start=c(2012, dntrain+2), frequency = 52)
+
+accuracy(m1.pred, dtest)
+
+##########################################
+# Holt-Winters Model, ANN
+m2 = ets(train, model="ZZZ")
+summary(m2)
+m2.pred = forecast.ets(m2, h=ntest, level=0)
+m2.pred[[2]]
+
+accuracy(m2.pred[[2]], test)
+
+##########################################
+# Holt-Winters Model, ANN
+m2 = ets(train, model="AAN")
+summary(m2)
+m2.pred = forecast.ets(m2, h=ntest, level=0)
+m2.pred[[2]]
+
+accuracy(m2.pred[[2]], test)
+
+###########################################
+Acf(train)
+Pacf(train)
+# Arima Models
+# AR(1) with seasonal component
+ar1s = Arima(train, order=c(1, 1, 0), 
+             seasonal=list(order=c(1,1,0), period=4))
+ar1s.pred = forecast(ar1s, h=ntest)
+autoplot(test, series="actual") + 
+  autolayer(ar1s.pred, PI=FALSE, series="AR(1) with seasonal")
+# compute the accuracy
+accuracy(ar1s.pred, test)
+
+# AR(1) with seasonal component
+ar1s = Arima(train, order=c(1, 1, 0), 
+             seasonal=list(order=c(1,1,0), period=52))
+ar1s.pred = forecast(ar1s, h=ntest)
+autoplot(ca.ts, series="actual values", colour="black", 
+         main="ARIMA forecast sales v.s. actual sales",
+         xlab="Week",
+         ylab="Sales") + 
+  autolayer(ar1s.pred, PI=FALSE, series="ARIMA forecast values")+
+  autolayer(ar1s$fitted, series="ARIMA fitted values")
+# compute the accuracy
+accuracy(ar1s.pred, test)
+
+checkresiduals(ar1s)
+
+# AR(1) with seasonal component
+ar1s = Arima(train, order=c(2, 1, 0), 
+             seasonal=list(order=c(1,1,0), period=4))
+ar1s.pred = forecast(ar1s, h=ntest)
+autoplot(test, series="actual") + 
+  autolayer(ar1s.pred, PI=FALSE, series="AR(1) with seasonal")
+# compute the accuracy
+accuracy(ar1s.pred, test)
+
+# AR(1) with seasonal component
+ar1s = Arima(train, order=c(2, 1, 0), 
+             seasonal=list(order=c(1,1,0), period=52))
+ar1s.pred = forecast(ar1s, h=ntest)
+autoplot(test, series="actual") + 
+  autolayer(ar1s.pred, PI=FALSE, series="AR(1) with seasonal")
+# compute the accuracy
+accuracy(ar1s.pred, test)
+
+# AR(1) with seasonal component
+ar1s = Arima(train, order=c(3, 1, 0), 
+             seasonal=list(order=c(1,1,0), period=4))
+ar1s.pred = forecast(ar1s, h=ntest)
+autoplot(test, series="actual") + 
+  autolayer(ar1s.pred, PI=FALSE, series="AR(1) with seasonal")
+# compute the accuracy
+accuracy(ar1s.pred, test)
+
+# AR(1) with seasonal component
+ar1s = Arima(train, order=c(3, 1, 0), 
+             seasonal=list(order=c(1,1,0), period=52))
+ar1s.pred = forecast(ar1s, h=ntest)
+autoplot(test, series="actual") + 
+  autolayer(ar1s.pred, PI=FALSE, series="AR(1) with seasonal")
+# compute the accuracy
+accuracy(ar1s.pred, test)
+
+################################################
+######## Linear Model #############################
+m0 = tslm(train ~ trend+season)
+m0.pred = forecast(m0, h=ntest)
+autoplot(test, series="actual") +
+  autolayer(m0.pred, PI=FALSE, series="Linear forecast")
+accuracy(m0.pred, test)
+
+#############################################################
+######### Linear Regression with external variables #########
+#############################################################
+# put all variables 
+ca.food = ts(data$CA_FOODS, start=c(2011, 1), frequency = 52)
+ca.hobbie = ts(data$CA_HOBBIES, start=c(2011, 1), frequency = 52)
+ca.household = ts(data$CA_HOUSEHOLD, start=c(2011, 1), frequency = 52)
+total.revenue = ts(data$Total.Revenue, start=c(2011, 1), frequency = 52)
+total.event = ts(data$total_event, start=c(2011, 1), frequency = 52)
+
+
+newdata = ts.intersect(ca.ts,
+                       ca.lag1 = lag(ca.ts, -1),
+                       tx.lag1 = lag(tx.ts, -1),
+                       wi.lag1 = lag(wi.ts, -1),
+                       ca.food.lag1 = lag(ca.food, -1),
+                       ca.hobbie.lag1 = lag(ca.hobbie, -1),
+                       ca.household.lag1 = lag(ca.household, -1),
+                       total.revenue.lag1 = lag(total.revenue, -1),
+                       total.event.lag1 = lag(total.event, -1),
+                       total.event)
+
+newdata.df = data.frame(newdata)
+ntrain = nrow(newdata.df) - ntest
+train.new = newdata.df[1:ntrain,]
+test.new = newdata.df[ntrain+1:nrow(newdata.df),]
+test.new = test.new[1:ntest,]
+ca.ts = ts(newdata.df$ca.ts, start=c(2011,2), frequency=52)
+train.ts = ts(train.new$ca.ts, start=c(2011,2), frequency = 52)
+test.ts = ts(test.new$ca.ts, start=c(2011, 2+ntrain), frequency = 52)
+
+####################################
+# fit linear model
+# MAPE = 2.89
+m1 = lm(ca.ts ~ ca.lag1+tx.lag1+wi.lag1+ca.food.lag1+ca.hobbie.lag1+ca.household.lag1+total.revenue.lag1+total.event, data=newdata.df)
+summary(m1)
+m1.pred = predict(m1, test.new)
+accuracy(m1$fitted.values, train.new$ca.ts)
+accuracy(m1.pred, test.new$ca.ts)
+
+####################################
+# fit linear model
+# MAPE = 2.89
+m1 = lm(ca.ts ~ ca.lag1+tx.lag1+wi.lag1+ca.food.lag1+ca.hobbie.lag1+total.event, data=newdata.df)
+summary(m1)
+m1.pred = predict(m1, test.new)
+accuracy(m1$fitted.values, train.new$ca.ts)
+accuracy(m1.pred, test.new$ca.ts)
+
+####################################
+# fit linear model
+# MAPE = 2.97
+m1 = lm(ca.ts ~ ca.lag1+tx.lag1+wi.lag1+ca.food.lag1+total.event, data=newdata.df)
+summary(m1)
+m1.pred = predict(m1, test.new)
+accuracy(m1$fitted.values, train.new$ca.ts)
+accuracy(m1.pred, test.new$ca.ts)
+
+####################################
+# fit linear model
+# MAPE = 2.99
+m1 = lm(ca.ts ~ ca.lag1+tx.lag1+ca.food.lag1+total.event, data=newdata.df)
+summary(m1)
+m1.pred = predict(m1, test.new)
+accuracy(m1$fitted.values, train.new$ca.ts)
+accuracy(m1.pred, test.new$ca.ts)
+
+####################################
+# fit linear model
+# MAPE = 2.94
+m1 = lm(ca.ts ~ ca.lag1+tx.lag1+ca.food.lag1, data=newdata.df)
+summary(m1)
+m1.pred = predict(m1, test.new)
+accuracy(m1$fitted.values, train.new$ca.ts)
+accuracy(m1.pred, test.new$ca.ts)
+
+######################################
+# final model with all the data #
+# We could use this final model to make prediction in real business settings
+#################################
+final.m = Arima(ca.ts, order=c(1, 1, 0), 
+             seasonal=list(order=c(1,1,0), period=52))
+summary(final.m)
+final.m.pred = forecast(final.m, h=16)
+final.m.pred
+
+```
+
